@@ -14,26 +14,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'loja_keys_super_secret_key_2026_xyz')
 
-# Procura templates TANTO na pasta templates/ QUANTO soltos na pasta raiz do GitHub
-template_dirs = [
-    os.path.join(BASE_DIR, 'templates'),
-    BASE_DIR
-]
-app.jinja_loader = jinja2.FileSystemLoader(template_dirs)
-
-# Fallback para arquivos estáticos (CSS/JS) caso tenham sido enviados soltos
-@app.route('/static/<path:filename>')
-def serve_custom_static(filename):
-    static_folder = os.path.join(BASE_DIR, 'static')
-    if os.path.exists(os.path.join(static_folder, filename)):
-        return send_from_directory(static_folder, filename)
-    if os.path.exists(os.path.join(BASE_DIR, filename)):
-        return send_from_directory(BASE_DIR, filename)
-    base_name = os.path.basename(filename)
-    if os.path.exists(os.path.join(BASE_DIR, base_name)):
-        return send_from_directory(BASE_DIR, base_name)
-    return "Arquivo não encontrado", 404
-
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -55,7 +35,7 @@ def init_db():
             )
         ''')
         
-        # Categorias de Keys
+        # Categorias
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS categories (
                 code TEXT PRIMARY KEY,
@@ -66,7 +46,7 @@ def init_db():
             )
         ''')
         
-        # Estoque de Keys
+        # Estoque
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,17 +78,15 @@ def init_db():
             )
         ''')
         
-        # Configurações do sistema com o seu Access Token Oficial e Senha Forte
+        # Credenciais oficiais e Senha Mestra
         MP_ACCESS_TOKEN = 'APP_USR-5018438626901279-100420-f423d886185a97e1962841e55156ec32-3386945777'
         SECURE_PASSWORD = 'Z8#mK9!vP2@wL5$qF7'
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password', ?)", (SECURE_PASSWORD,))
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('mp_access_token', ?)", (MP_ACCESS_TOKEN,))
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('test_mode', 'false')")
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('store_name', 'KEYSTORE PRO')")
-        
-        # Inserir ou atualizar as 3 categorias solicitadas: GOOGLE, X, FACE
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('store_name', 'DIGITAL STORE')")
         
+        # Categorias solicitadas: GOOGLE, X, FACE
         default_categories = [
             ('G', 'GOOGLE', 3.50, 'Mais Vendido', 'Acesso imediato com entrega automática após confirmação do PIX.'),
             ('X', 'X', 3.50, 'Disponível', 'Acesso imediato com entrega automática após confirmação do PIX.'),
@@ -124,19 +102,6 @@ def init_db():
         conn.commit()
 
 init_db()
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    import traceback
-    trace = traceback.format_exc()
-    logging.error(f"Erro 500 no Servidor: {trace}")
-    return f"""
-    <div style="font-family: monospace; padding: 25px; background: #0f172a; color: #f87171; border: 1px solid #ef4444; border-radius: 12px; margin: 30px auto; max-width: 800px;">
-        <h3 style="color: #ef4444; margin-top: 0;">⚠️ Detalhes do Erro no Servidor:</h3>
-        <p style="color: #94a3b8; font-size: 13px;">Copie a mensagem abaixo para identificar o problema:</p>
-        <pre style="background: #020617; padding: 15px; border-radius: 8px; color: #f1f5f9; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">{trace}</pre>
-    </div>
-    """, 500
 
 def get_setting(key, default=''):
     with get_db() as conn:
@@ -158,6 +123,70 @@ def admin_required(f):
             return jsonify({'success': False, 'message': 'Acesso não autorizado'}), 401
         return f(*args, **kwargs)
     return decorated_function
+
+# ==========================================================
+# CONFIGURAÇÃO DE TEMPLATES MULTI-DIRETÓRIO & EMBUTIDOS
+# ==========================================================
+
+# Lê templates do disco se existirem
+def load_file_content(path, default=""):
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+    return default
+
+index_file_on_disk = os.path.join(BASE_DIR, 'templates', 'index.html')
+if not os.path.exists(index_file_on_disk):
+    index_file_on_disk = os.path.join(BASE_DIR, 'index.html')
+
+admin_file_on_disk = os.path.join(BASE_DIR, 'templates', 'admin.html')
+if not os.path.exists(admin_file_on_disk):
+    admin_file_on_disk = os.path.join(BASE_DIR, 'admin.html')
+
+search_template_dirs = [
+    os.path.join(BASE_DIR, 'templates'),
+    BASE_DIR
+]
+try:
+    for root, dirs, files in os.walk(BASE_DIR):
+        if 'index.html' in files or 'admin.html' in files:
+            if root not in search_template_dirs:
+                search_template_dirs.append(root)
+except Exception:
+    pass
+
+# Templates embutidos de segurança máxima caso arquivos não tenham sido enviados ao GitHub
+EMBEDDED_INDEX = load_file_content(index_file_on_disk, """<!DOCTYPE html>
+<html lang="pt-BR" class="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>DIGITAL STORE</title><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"><script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script><link rel="stylesheet" href="/static/css/style.css"></head><body class="bg-[#090d16] text-white p-4"><div class="max-w-4xl mx-auto py-10 text-center"><h1 class="text-3xl font-black mb-2">DIGITAL STORE</h1><p class="text-slate-400 mb-8">Entrega Automática via PIX</p><div id="categories-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div></div><script src="/static/js/store.js"></script></body></html>""")
+
+EMBEDDED_ADMIN = load_file_content(admin_file_on_disk, """<!DOCTYPE html>
+<html lang="pt-BR" class="dark"><head><meta charset="UTF-8"><title>Painel</title><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"><link rel="stylesheet" href="/static/css/style.css"></head><body class="bg-[#090d16] text-white p-6"><div id="login-container" class="max-w-sm mx-auto my-20 p-6 bg-slate-900 rounded-2xl"><form id="admin-login-form" onsubmit="handleLogin(event)"><input type="password" id="admin-password-input" placeholder="Senha mestra" class="w-full p-3 rounded bg-slate-800 mb-3"><button type="submit" id="btn-login" class="w-full p-3 bg-indigo-600 rounded font-bold">Entrar</button></form></div><div id="admin-dashboard" class="hidden max-w-4xl mx-auto"><h2 class="text-2xl font-bold mb-4">Painel de Estoque</h2><div id="stat-revenue" class="text-xl font-bold mb-4">R$ 0,00</div><textarea id="keys-textarea" class="w-full p-3 rounded bg-slate-800 text-white mb-2"></textarea><select id="key-category-select" class="p-2 bg-slate-800 mb-2"><option value="G">GOOGLE</option><option value="X">X</option><option value="F">FACE</option></select><button onclick="handleAddKeys(event)" id="btn-submit-keys" class="p-3 bg-emerald-500 text-black font-bold rounded">Salvar</button></div><script src="/static/js/admin.js"></script></body></html>""")
+
+# Configura o carregador do Jinja2 para NUNCA dar TemplateNotFound
+app.jinja_env.loader = jinja2.ChoiceLoader([
+    jinja2.FileSystemLoader(search_template_dirs),
+    jinja2.DictLoader({
+        'index.html': EMBEDDED_INDEX,
+        'admin.html': EMBEDDED_ADMIN
+    })
+])
+
+# Rotas de fallback para arquivos estáticos (CSS / JS)
+@app.route('/static/<path:filename>')
+def serve_custom_static(filename):
+    static_folder = os.path.join(BASE_DIR, 'static')
+    full_path = os.path.join(static_folder, filename)
+    if os.path.exists(full_path):
+        return send_from_directory(static_folder, filename)
+    if os.path.exists(os.path.join(BASE_DIR, filename)):
+        return send_from_directory(BASE_DIR, filename)
+    base_name = os.path.basename(filename)
+    if os.path.exists(os.path.join(BASE_DIR, base_name)):
+        return send_from_directory(BASE_DIR, base_name)
+    return "Arquivo não encontrado", 404
 
 # ==========================================================
 # ROTAS PÚBLICAS / CLIENTE
@@ -184,7 +213,7 @@ def get_store_info():
         mp_token = get_setting('mp_access_token', '').strip()
         test_mode = get_setting('test_mode', 'false') == 'true'
         has_mp = bool(mp_token)
-        store_name = get_setting('store_name', 'KEYSTORE PRO')
+        store_name = get_setting('store_name', 'DIGITAL STORE')
         
         return jsonify({
             'success': True,
@@ -206,12 +235,11 @@ def create_order():
         payer_email = "comprador@gmail.com"
     
     if category_code not in ['G', 'X', 'F']:
-        return jsonify({'success': False, 'message': 'Categoria inválida. Escolha KEYS G, KEYS X ou KEYS F'}), 400
+        return jsonify({'success': False, 'message': 'Categoria inválida. Escolha GOOGLE, X ou FACE'}), 400
         
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Verificar estoque disponível
         cursor.execute('''
             SELECT COUNT(*) as count FROM keys
             WHERE category_code = ? AND status = 'available'
@@ -219,7 +247,7 @@ def create_order():
         stock_count = cursor.fetchone()['count']
         
         if stock_count <= 0:
-            return jsonify({'success': False, 'message': f'Desculpe, as {category_code} estão esgotadas no momento.'}), 400
+            return jsonify({'success': False, 'message': f'Desculpe, o item está esgotado no momento.'}), 400
 
         cursor.execute("SELECT * FROM categories WHERE code = ?", (category_code,))
         category = cursor.fetchone()
@@ -234,7 +262,6 @@ def create_order():
         qr_code_base64 = ""
         mp_payment_id = ""
         
-        # Se houver token do Mercado Pago, gerar PIX real
         if mp_token:
             try:
                 headers = {
@@ -289,14 +316,9 @@ def create_order():
                 logging.error(f"Exceção ao chamar Mercado Pago: {str(e)}")
                 return jsonify({'success': False, 'message': f'Erro ao conectar com Mercado Pago: {str(e)}'}), 500
         else:
-            # Sem token configurado
             if not test_mode:
-                return jsonify({
-                    'success': False,
-                    'message': 'Nenhum Access Token configurado. Configure no painel /admin.'
-                }), 400
+                return jsonify({'success': False, 'message': 'Access Token não configurado'}), 400
                     
-        # Caso esteja em modo teste sem token do MP
         is_mock = False
         if not qr_code:
             is_mock = True
@@ -330,7 +352,6 @@ def check_order_status(order_id):
         if not order:
             return jsonify({'success': False, 'message': 'Pedido não encontrado'}), 404
             
-        # Se já aprovado, retorna a key entregue
         if order['status'] == 'approved':
             return jsonify({
                 'success': True,
@@ -340,7 +361,6 @@ def check_order_status(order_id):
                 'amount': order['amount']
             })
             
-        # Se pendente e temos pagamento no Mercado Pago real, consulta o status no MP
         mp_payment_id = order['mp_payment_id']
         mp_token = get_setting('mp_access_token', '').strip()
         
@@ -357,7 +377,6 @@ def check_order_status(order_id):
                     current_status = payment_data.get('status')
                     
                     if current_status == 'approved':
-                        # Atribuir Key e finalizar pedido
                         delivered_key = _deliver_key_to_order(conn, order_id, order['category_code'])
                         if delivered_key:
                             return jsonify({
@@ -371,7 +390,7 @@ def check_order_status(order_id):
                             return jsonify({
                                 'success': True,
                                 'status': 'out_of_stock',
-                                'message': 'Pagamento recebido, mas o estoque esgotou no momento da confirmação. Entre em contato com o suporte.'
+                                'message': 'Sem estoque disponível.'
                             })
             except Exception as e:
                 logging.error(f"Erro ao verificar pagamento MP: {str(e)}")
@@ -384,13 +403,11 @@ def check_order_status(order_id):
 
 @app.route('/api/simulate-payment/<order_id>', methods=['POST'])
 def simulate_payment(order_id):
-    """Permite testar a aprovação e entrega de key sem gastar dinheiro real (Modo Teste)"""
     test_mode = get_setting('test_mode', 'false') == 'true'
     mp_token = get_setting('mp_access_token', '').strip()
     
-    # Permitir se estiver em modo teste ou se ainda não tiver configurado MP
     if not test_mode and bool(mp_token):
-        return jsonify({'success': False, 'message': 'Modo de teste desativado nas configurações'}), 403
+        return jsonify({'success': False, 'message': 'Modo teste desativado'}), 403
         
     with get_db() as conn:
         cursor = conn.cursor()
@@ -414,12 +431,11 @@ def simulate_payment(order_id):
             return jsonify({
                 'success': False,
                 'status': 'out_of_stock',
-                'message': 'Sem estoque disponível para esta categoria.'
+                'message': 'Sem estoque disponível.'
             }), 400
 
 def _deliver_key_to_order(conn, order_id, category_code):
     cursor = conn.cursor()
-    # Buscar primeira key disponível
     cursor.execute('''
         SELECT id, key_value FROM keys
         WHERE category_code = ? AND status = 'available'
@@ -435,14 +451,12 @@ def _deliver_key_to_order(conn, order_id, category_code):
     key_id = available_key['id']
     key_value = available_key['key_value']
     
-    # Marcar key como vendida
     cursor.execute('''
         UPDATE keys
         SET status = 'sold', sold_at = CURRENT_TIMESTAMP, order_id = ?
         WHERE id = ?
     ''', (order_id, key_id))
     
-    # Atualizar pedido como aprovado
     cursor.execute('''
         UPDATE orders
         SET status = 'approved', delivered_key = ?, updated_at = CURRENT_TIMESTAMP
@@ -451,40 +465,6 @@ def _deliver_key_to_order(conn, order_id, category_code):
     
     conn.commit()
     return key_value
-
-# Webhook para Mercado Pago (notificação instantânea)
-@app.route('/api/webhook/mercadopago', methods=['POST'])
-def mp_webhook():
-    topic = request.args.get('topic') or request.args.get('type')
-    payment_id = request.args.get('id') or request.args.get('data.id')
-    
-    if not payment_id and request.is_json:
-        data = request.get_json()
-        payment_id = data.get('data', {}).get('id') or data.get('id')
-        
-    if payment_id:
-        mp_token = get_setting('mp_access_token', '').strip()
-        if mp_token:
-            try:
-                headers = {"Authorization": f"Bearer {mp_token}"}
-                mp_resp = requests.get(
-                    f"https://api.mercadopago.com/v1/payments/{payment_id}",
-                    headers=headers,
-                    timeout=10
-                )
-                if mp_resp.status_code == 200:
-                    payment = mp_resp.json()
-                    if payment.get('status') == 'approved':
-                        with get_db() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute("SELECT id, category_code, status FROM orders WHERE mp_payment_id = ?", (str(payment_id),))
-                            order = cursor.fetchone()
-                            if order and order['status'] != 'approved':
-                                _deliver_key_to_order(conn, order['id'], order['category_code'])
-            except Exception as e:
-                logging.error(f"Erro webhook MP: {e}")
-                
-    return jsonify({"status": "ok"}), 200
 
 # ==========================================================
 # ÁREA ADMINISTRATIVA SEGURA
@@ -498,7 +478,6 @@ def admin_page():
 
 @app.route('/admin')
 def fake_admin_trap():
-    """Retorna 404 intencional para despistar bots e invasores"""
     return "Página não encontrada.", 404
 
 @app.route('/api/admin/login', methods=['POST'])
@@ -509,12 +488,11 @@ def admin_login():
     
     attempt_info = login_attempts.get(client_ip, {'count': 0, 'locked_until': 0})
     
-    # Se estiver bloqueado temporariamente
     if now < attempt_info.get('locked_until', 0):
         remaining = int(attempt_info['locked_until'] - now)
         return jsonify({
             'success': False,
-            'message': f'Muitas tentativas incorretas. Acesso bloqueado por segurança por mais {remaining} segundos.'
+            'message': f'Acesso bloqueado por segurança. Tente em {remaining} segundos.'
         }), 429
         
     data = request.get_json() or {}
@@ -526,23 +504,22 @@ def admin_login():
         session['is_admin'] = True
         return jsonify({'success': True, 'message': 'Login realizado com sucesso'})
         
-    # Falha de login - proteção contra força bruta
-    time.sleep(1) # Delay de 1 segundo para impedir ataques automatizados
+    time.sleep(1)
     attempt_info['count'] = attempt_info.get('count', 0) + 1
     
     if attempt_info['count'] >= 5:
-        attempt_info['locked_until'] = now + 600 # Bloqueia por 10 minutos
+        attempt_info['locked_until'] = now + 600
         login_attempts[client_ip] = attempt_info
         return jsonify({
             'success': False,
-            'message': 'Limite de 5 tentativas incorretas excedido! Painel bloqueado por 10 minutos.'
+            'message': 'Limite de 5 tentativas excedido. Bloqueado por 10 minutos.'
         }), 429
         
     login_attempts[client_ip] = attempt_info
     remaining_attempts = 5 - attempt_info['count']
     return jsonify({
         'success': False,
-        'message': f'Senha incorreta! ({remaining_attempts} tentativa(s) restante(s) antes do bloqueio).'
+        'message': f'Senha incorreta! ({remaining_attempts} tentativa(s) restante(s)).'
     }), 401
 
 @app.route('/api/admin/logout', methods=['POST'])
@@ -560,15 +537,12 @@ def admin_dashboard_stats():
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Total Faturamento
         cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM orders WHERE status = 'approved'")
         total_revenue = cursor.fetchone()['total']
         
-        # Total Keys Vendidas
         cursor.execute("SELECT COUNT(*) as count FROM keys WHERE status = 'sold'")
         total_sold = cursor.fetchone()['count']
         
-        # Estoque por categoria
         cursor.execute('''
             SELECT 
                 c.code, c.name, c.price,
@@ -581,7 +555,6 @@ def admin_dashboard_stats():
         ''')
         stock_by_cat = [dict(row) for row in cursor.fetchall()]
         
-        # Vendas recentes
         cursor.execute('''
             SELECT o.id, o.category_code, o.amount, o.status, o.delivered_key, o.created_at, o.mp_payment_id
             FROM orders o
@@ -632,12 +605,12 @@ def admin_add_keys():
     raw_keys = data.get('keys_text', '')
     
     if category_code not in ['G', 'X', 'F']:
-        return jsonify({'success': False, 'message': 'Categoria inválida. Selecione KEYS G, KEYS X ou KEYS F.'}), 400
+        return jsonify({'success': False, 'message': 'Categoria inválida. Selecione GOOGLE, X ou FACE.'}), 400
         
     lines = [line.strip() for line in raw_keys.splitlines() if line.strip()]
     
     if not lines:
-        return jsonify({'success': False, 'message': 'Nenhuma key foi informada. Insira ao menos uma key no formulário.'}), 400
+        return jsonify({'success': False, 'message': 'Nenhum item informado.'}), 400
         
     added_count = 0
     duplicates_count = 0
@@ -645,7 +618,6 @@ def admin_add_keys():
     with get_db() as conn:
         cursor = conn.cursor()
         for key_str in lines:
-            # Checar se já existe no banco
             cursor.execute("SELECT id FROM keys WHERE key_value = ?", (key_str,))
             if cursor.fetchone():
                 duplicates_count += 1
@@ -661,9 +633,9 @@ def admin_add_keys():
         
     names_map = {'G': 'GOOGLE', 'X': 'X', 'F': 'FACE'}
     cat_label = names_map.get(category_code, category_code)
-    msg = f"{added_count} itens adicionados com sucesso à categoria {cat_label}!"
+    msg = f"{added_count} itens adicionados com sucesso a {cat_label}!"
     if duplicates_count > 0:
-        msg += f" ({duplicates_count} ignorados por já existirem no sistema)."
+        msg += f" ({duplicates_count} duplicados ignorados)."
         
     return jsonify({
         'success': True,
@@ -682,25 +654,8 @@ def admin_delete_key(key_id):
         conn.commit()
         
     if deleted:
-        return jsonify({'success': True, 'message': 'Key removida com sucesso.'})
-    return jsonify({'success': False, 'message': 'Key não encontrada ou já foi vendida'}), 400
-
-@app.route('/api/admin/keys/clear', methods=['POST'])
-@admin_required
-def admin_clear_category_stock():
-    data = request.get_json() or {}
-    category_code = data.get('category_code', '').upper()
-    
-    if category_code not in ['G', 'X', 'F']:
-        return jsonify({'success': False, 'message': 'Categoria inválida'}), 400
-        
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM keys WHERE category_code = ? AND status = 'available'", (category_code,))
-        count = cursor.rowcount
-        conn.commit()
-        
-    return jsonify({'success': True, 'message': f'{count} keys disponíveis da categoria KEYS {category_code} foram removidas.'})
+        return jsonify({'success': True, 'message': 'Item removido com sucesso.'})
+    return jsonify({'success': False, 'message': 'Item não encontrado ou já vendido'}), 400
 
 @app.route('/api/admin/settings', methods=['GET', 'POST'])
 @admin_required
@@ -710,7 +665,7 @@ def admin_settings():
             'success': True,
             'mp_access_token': get_setting('mp_access_token', ''),
             'test_mode': get_setting('test_mode', 'false') == 'true',
-            'store_name': get_setting('store_name', 'KEYSTORE PRO')
+            'store_name': get_setting('store_name', 'DIGITAL STORE')
         })
         
     data = request.get_json() or {}
@@ -721,7 +676,7 @@ def admin_settings():
         set_setting('test_mode', 'true' if data['test_mode'] else 'false')
         
     if 'store_name' in data:
-        set_setting('store_name', data['store_name'].strip() or 'KEYSTORE PRO')
+        set_setting('store_name', data['store_name'].strip() or 'DIGITAL STORE')
         
     if 'new_password' in data and data['new_password'].strip():
         set_setting('admin_password', data['new_password'].strip())
@@ -739,7 +694,6 @@ def test_mercadopago_connection():
         
     try:
         headers = {"Authorization": f"Bearer {token}"}
-        # Testa endpoint de consulta de usuários do MP
         resp = requests.get("https://api.mercadopago.com/users/me", headers=headers, timeout=8)
         if resp.status_code == 200:
             user_data = resp.json()
@@ -750,10 +704,7 @@ def test_mercadopago_connection():
                 'message': f'Conexão bem sucedida! Vendedor: {nickname} ({email})'
             })
         else:
-            return jsonify({
-                'success': False,
-                'message': f'Token inválido ou não autorizado: HTTP {resp.status_code}'
-            }), 400
+            return jsonify({'success': False, 'message': f'Token inválido: HTTP {resp.status_code}'}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': f'Erro ao conectar: {str(e)}'}), 500
 
