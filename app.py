@@ -5,17 +5,34 @@ import json
 import logging
 from datetime import datetime
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+import jinja2
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 import requests
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-app = Flask(
-    __name__,
-    template_folder=os.path.join(BASE_DIR, 'templates'),
-    static_folder=os.path.join(BASE_DIR, 'static')
-)
+app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'loja_keys_super_secret_key_2026_xyz')
+
+# Procura templates TANTO na pasta templates/ QUANTO soltos na pasta raiz do GitHub
+template_dirs = [
+    os.path.join(BASE_DIR, 'templates'),
+    BASE_DIR
+]
+app.jinja_loader = jinja2.FileSystemLoader(template_dirs)
+
+# Fallback para arquivos estáticos (CSS/JS) caso tenham sido enviados soltos
+@app.route('/static/<path:filename>')
+def serve_custom_static(filename):
+    static_folder = os.path.join(BASE_DIR, 'static')
+    if os.path.exists(os.path.join(static_folder, filename)):
+        return send_from_directory(static_folder, filename)
+    if os.path.exists(os.path.join(BASE_DIR, filename)):
+        return send_from_directory(BASE_DIR, filename)
+    base_name = os.path.basename(filename)
+    if os.path.exists(os.path.join(BASE_DIR, base_name)):
+        return send_from_directory(BASE_DIR, base_name)
+    return "Arquivo não encontrado", 404
 
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
