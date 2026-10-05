@@ -8,10 +8,16 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import requests
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static')
+)
 app.secret_key = os.environ.get('SECRET_KEY', 'loja_keys_super_secret_key_2026_xyz')
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
@@ -94,18 +100,26 @@ def init_db():
         
         for code, name, price, badge, desc in default_categories:
             cursor.execute('''
-                INSERT INTO categories (code, name, price, badge, description)
+                INSERT OR REPLACE INTO categories (code, name, price, badge, description)
                 VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(code) DO UPDATE SET
-                    name = excluded.name,
-                    price = excluded.price,
-                    badge = excluded.badge,
-                    description = excluded.description
             ''', (code, name, price, badge, desc))
             
         conn.commit()
 
 init_db()
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    trace = traceback.format_exc()
+    logging.error(f"Erro 500 no Servidor: {trace}")
+    return f"""
+    <div style="font-family: monospace; padding: 25px; background: #0f172a; color: #f87171; border: 1px solid #ef4444; border-radius: 12px; margin: 30px auto; max-width: 800px;">
+        <h3 style="color: #ef4444; margin-top: 0;">⚠️ Detalhes do Erro no Servidor:</h3>
+        <p style="color: #94a3b8; font-size: 13px;">Copie a mensagem abaixo para identificar o problema:</p>
+        <pre style="background: #020617; padding: 15px; border-radius: 8px; color: #f1f5f9; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">{trace}</pre>
+    </div>
+    """, 500
 
 def get_setting(key, default=''):
     with get_db() as conn:

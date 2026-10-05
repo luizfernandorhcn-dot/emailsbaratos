@@ -3,12 +3,15 @@ title DIGITAL STORE - Servidor de Vendas
 chcp 65001 >nul
 cls
 
+:: Forçar diretorio de trabalho para a pasta do script
+cd /d "%~dp0"
+
 echo ==============================================================
 echo              DIGITAL STORE - SISTEMA SEGURO
 echo ==============================================================
 echo.
 echo  [1/2] Verificando dependencias...
-python -m pip install -r "%~dp0requirements.txt" --quiet
+python -m pip install Flask requests --quiet
 
 echo  [2/2] Iniciando o servidor...
 echo.
@@ -23,6 +26,6 @@ echo.
 
 start http://localhost:5000
 
-python "%~dp0app.py"
+python app.py
 
 pause
